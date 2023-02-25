@@ -1,7 +1,9 @@
 from datetime import datetime
 
 from sqlalchemy import Integer, String, ForeignKey, Table, Column, TIMESTAMP
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, Mapped, query_expression
+
+from src.users.models import User
 
 from src.db import Base
 
@@ -35,7 +37,6 @@ class Author(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False)
-
     books = relationship('Book', secondary='book_author', back_populates='authors')
 
 
@@ -50,14 +51,15 @@ class Book(Base):
     available = Column(Integer)
 
     authors = relationship('Author', secondary='book_author', back_populates='books')
-
     users = relationship('User', secondary='book_user', back_populates='books')
 
     comments = relationship('Comment', back_populates='book')
+    count_comments = query_expression()
 
-    tags = relationship('Tag', secondary='book_author', back_populates='books')
+    tags = relationship('Tag', secondary='book_tag', back_populates='books')
 
     ratings = relationship('Rating', back_populates='book')
+    avg_rating = query_expression()
 
 
 class Comment(Base):

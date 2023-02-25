@@ -11,9 +11,6 @@ import os
 import sys
 from dotenv import load_dotenv
 
-import src.db as db
-import src.users.models
-import src.books.models
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
@@ -33,7 +30,12 @@ fileConfig(config.config_file_name)
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
-target_metadata = db.Base.metadata
+
+from src.db import Base
+from src.users.models import User
+from src.books.models import Book, Author, Rating, Tag, Comment, book_author, book_user, book_tag
+
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

@@ -3,7 +3,7 @@ version: "3.8"
 services:
   db:
     image: postgres:12
-    container_name: db_postgres
+    container_name: db
     restart: always
     ports:
       - "5432:5432"
@@ -14,7 +14,7 @@ services:
   web:
     build: .
     container_name: library_fastapi
-    command: bash -c "alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port 8000 --reload"
+    command: bash -c "alembic upgrade head && uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
     volumes:
       - .:/code
     ports:

@@ -20,22 +20,6 @@ class User(SQLAlchemyBaseUserTable[int], Base):
     is_verified = Column(Boolean, default=False, nullable=False)
 
     registration_datetime = Column(TIMESTAMP, default=datetime.utcnow)
-
-    role_id = Column(Integer, ForeignKey('role.id'))
-    role = relationship('Role', back_populates='user')
-
     books = relationship('Book', secondary='book_user', back_populates='users')
-
-    comments = relationship('Comment', back_populates='users')
-
-    ratings = relationship('Rating', back_populates='users')
-
-
-class Role(Base):
-    __tablename__ = 'role'
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(10), nullable=False, unique=True)
-    permissions = Column(JSON, nullable=True)
-
-    users = relationship('User', back_populates='role')
+    comments = relationship('Comment', back_populates='user')
+    ratings = relationship('Rating', back_populates='user')
