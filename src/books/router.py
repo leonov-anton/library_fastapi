@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Union
 
 from fastapi import APIRouter, Depends
 from sqlalchemy import select, func
@@ -11,17 +11,25 @@ from src.users.models import User
 from src.users.auth_config import fastapi_users
 from .models import Book, Rating, Comment
 
+from .service import get_books_list, get_book_data
+
 router = APIRouter(
-    prefix='/book',
+    prefix='/library',
     tags=['Book']
 )
+
+# TODO:
+#  энепоинт поиск книг по базе (название книги, описание, авторы),
+#  энепоинт авторов (список с книгами),
+#  энепоинт автора (список книг по одному автору)
+#  энепоинт патч коммента
 
 
 @router.get('/', response_model=List[book_schema.BooksSchema])
 async def get_books(limmit: int = 20,
                     offset: int = 0,
-                    session: AsyncSession = Depends(get_async_session)
-                    ) -> List[book_schema.BooksSchema]:
+                    session: AsyncSession = Depends(get_async_session),
+                    ):
     """
     Эндпоинт всех книг. Пагинация, по умолчанию 10.
     :param limmit: Кол-во выводимых книг.
@@ -29,23 +37,11 @@ async def get_books(limmit: int = 20,
     :param session: сессия БД
     :return: Книга: id, название, авторы, год, средний рейтинг, кол-во коментариев, теги
     """
-
-    books = select(Book)\
-        .outerjoin(Rating)\
-        .outerjoin(Comment)\
-        .options(joinedload(Book.authors),
-                 joinedload(Book.tags),
-                 with_expression(Book.avg_rating, func.avg(Rating.value).label('avg_rating')),
-                 with_expression(Book.count_comments, func.count(Comment.id).label('count_comments')))\
-        .group_by(Book.id)\
-        .order_by(Book.id)
-
-    res = await session.execute(books)
-
-    return res.unique().scalars().all()[offset:][:limmit]
+    books = await get_books_list(session)
+    return books[offset:][:limmit]
 
 
-@router.get('/{book_id}')
+@router.get('/{book_id}', response_model=book_schema.BookSchema)
 async def get_book(book_id: int,
                    session: AsyncSession = Depends(get_async_session)
                    ):
@@ -55,18 +51,8 @@ async def get_book(book_id: int,
     :param session: сессия БД
     :return: Книга: id, название, авторы, год, средний рейтинг, комментарии к книге, теги
     """
-    query = select(Book)\
-        .where(Book.id == book_id) \
-        .outerjoin(Rating) \
-        .options(joinedload(Book.authors),
-                 joinedload(Book.tags),
-                 joinedload(Book.comments).load_only(Comment.id, Comment.content, Comment.created),
-                 with_expression(Book.avg_rating, func.avg(Rating.value).label('avg_rating')))\
-        .group_by(Book.id)
-
-    res = await session.execute(query)
-
-    return res.scalar()
+    book = await get_book_data(book_id, session)
+    return book
 
 
 @router.post('/{book_id}/rating')
@@ -76,24 +62,33 @@ async def set_rating(book_id: int,
                      user: User = Depends(fastapi_users.current_user())
                      ):
     """
-    Энепоин руйтинга книги от пользователя.
+    Энепоин рейтинга книги от пользователя. Если ранее оченка ставила, то обновляет оченку.
     :param user: Пользователь.
     :param book_id: id книги по каталогу.
     :param rating: Рейтинг от пользователя.
     :param session: Сессия БД.
     :return: Сообщение - рейтинг учтен.
     """
-    rating = Rating(value=rating.value, book_id=book_id, user_id=user.id)
-    session.add(rating)
+
+    query = select(Rating).where(Rating.user == user, Rating.book_id == book_id)
+    exist_rating = await session.scalar(query)
+
+    if exist_rating:
+        exist_rating.value = rating.value
+        msg = 'обновлена'
+    else:
+        new_rating = Rating(value=rating.value, book_id=book_id, user_id=user.id)
+        session.add(new_rating)
+        msg = 'учтена'
 
     await session.commit()
     await session.close()
 
-    return {f'{user.username}, ваша оценка учтена!'}
+    return {'Message': f'{user.username}, ваша оценка {msg}!'}
 
 
 @router.post('/{book_id}/comment')
-async def set_comment(book_id: int,
+async def add_comment(book_id: int,
                       comment: book_schema.BookComment,
                       session: AsyncSession = Depends(get_async_session),
                       user: User = Depends(fastapi_users.current_user())
@@ -107,11 +102,11 @@ async def set_comment(book_id: int,
     :return: Сообщение - комментаций добавлен.
     """
 
-    new_comment = Comment(content=comment.content, user_id=user.id, book_id=book_id)
+    new_comment = Comment(content=comment.content, user=user, book_id=book_id)
 
     session.add(new_comment)
 
     await session.commit()
     await session.close()
 
-    return {'Комментарий добавлен'}
+    return {'Message': 'Комментарий добавлен!'}

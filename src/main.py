@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from src.books.router import router as router_books
+from src.books.router_admin import router as router_books_admin
 from src.users.schemas import UserRead, UserCreate, UserUpdate
 from src.users.auth_config import fastapi_users, auth_backend
 
@@ -11,6 +12,10 @@ app = FastAPI(
 
 app.include_router(
     router=router_books
+)
+
+app.include_router(
+    router=router_books_admin
 )
 
 app.include_router(

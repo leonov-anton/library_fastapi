@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from pydantic import BaseModel, Field
 
@@ -30,33 +30,45 @@ class BookComment(BaseModel):
 
 
 class AuthorBase(BaseModel):
-    id: int
-    name: str
+    id: Union[int, None] = 0
+    name: str = 'Фамилия Имя'
 
     class Config:
         orm_mode = True
 
 
 class BookBase(BaseModel):
-    id: int
-    title: str
-    year_published: Optional[int]
-    avg_rating: Optional[float]
-
-    authors: List[AuthorBase]
-    tags: List[BookTag]
+    id: Union[int, None] = 0
+    title: str = 'Название'
+    year_published: Union[int, None] = None
+    avg_rating: Union[float, None] = None
 
     class Config:
         orm_mode = True
 
 
-class BooksSchema(BookBase):
+class BookAuthorTag(BaseModel):
+    authors: List[AuthorBase] = []
+    tags: List[BookTag] = []
+
+
+class BooksSchema(BookAuthorTag, BookBase):
     count_comments: int
 
 
-class BookSchema(BookBase):
+class BooksAdminSchema(BooksSchema):
+    quantity: int = 0
+    available: int = 0
+
+
+class BookSchema(BookAuthorTag, BookBase):
     comments: List[BookComment] = []
 
 
+class BookAdminSchema(BookSchema):
+    quantity: int = 0
+    available: int = 0
+
+
 class AuthorSchema(AuthorBase):
-    books: List[BookBase]
+    books: List[BookBase] = []
