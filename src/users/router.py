@@ -1,6 +1,7 @@
 from src.main import app
 from .schemas import UserRead, UserCreate, UserUpdate
-from .utils import auth_backend, fastapi_users
+from .auth_config import auth_backend, fastapi_users
+
 
 app.include_router(
     fastapi_users.get_auth_router(auth_backend),
