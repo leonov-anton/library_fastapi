@@ -4,9 +4,6 @@ from fastapi_users import schemas
 from pydantic import EmailStr
 
 
-from src.books.schema import BookBase
-
-
 class UserRead(schemas.BaseUser[int]):
     id: int
     email: EmailStr

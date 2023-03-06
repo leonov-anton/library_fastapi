@@ -1,7 +1,7 @@
 from datetime import datetime
 
 from sqlalchemy import Integer, String, ForeignKey, Table, Column, TIMESTAMP
-from sqlalchemy.orm import relationship, Mapped, query_expression
+from sqlalchemy.orm import relationship, query_expression
 
 from src.users.models import User
 
@@ -68,6 +68,7 @@ class Comment(Base):
     id = Column(Integer, primary_key=True, index=True)
     created = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
     content = Column(String(300))
+    changed = Column(TIMESTAMP, nullable=True)
 
     user_id = Column(Integer, ForeignKey('user.id'))
     user = relationship('User', back_populates='comments')

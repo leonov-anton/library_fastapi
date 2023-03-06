@@ -1,14 +1,16 @@
 from datetime import datetime
 from typing import List, Union, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator, ValidationError
 
+from src.users.schema import UserRead
 
 # TODO:
 #  упорядочить схемы, добавить валидацию
 
-class BookRating(BaseModel):
-    id: Union[int, None] = None
+
+class RatingBase(BaseModel):
+    id: Optional[int]
     value: int = Field(ge=0, le=5)
 
     class Config:
@@ -23,17 +25,18 @@ class TagBase(BaseModel):
         orm_mode = True
 
 
-class BookComment(BaseModel):
-    id: Union[int, None] = None
+class CommentBase(BaseModel):
+    id: Optional[int]
     content: str = Field(max_length=300)
-    created: datetime
+    created: Optional[datetime]
+    changed: Optional[Union[datetime, None]]
 
     class Config:
         orm_mode = True
 
 
 class AuthorBase(BaseModel):
-    id: Union[int, None] = None
+    id: Optional[int]
     name: str = 'Фамилия Имя'
 
     class Config:
@@ -41,13 +44,17 @@ class AuthorBase(BaseModel):
 
 
 class BookBase(BaseModel):
-    id: Union[int, None] = None
+    id: int
     title: str = 'Название'
-    year_published: Union[int, None] = None
-    avg_rating: Union[float, None] = None
+    year_published: Optional[int]
+    avg_rating: Optional[float]
 
     class Config:
         orm_mode = True
+
+
+class AuthorSchema(AuthorBase):
+    books: List[BookBase]
 
 
 class BookAuthor(BaseModel):
@@ -59,33 +66,43 @@ class BookTag(BaseModel):
 
 
 class BooksSchema(BookBase):
-    count_comments: int
+    count_comments: int = 0
     authors: List[AuthorBase] = []
     tags: List[TagBase] = []
 
 
 class BooksAdminSchema(BooksSchema):
+    users: List[UserRead] = []
     quantity: int = 0
     available: int = 0
 
 
 class BookSchema(BookBase):
-    comments: List[BookComment] = []
-    authors: List[AuthorBase] = []
-    tags: List[TagBase] = []
+    description: Optional[str] = Field(max_length=250)
+    comments: Optional[List[CommentBase]]
+    authors: Optional[List[AuthorBase]]
+    tags: Optional[List[TagBase]]
 
 
 class BookAdminSchema(BookSchema):
-    quantity: int = 0
-    available: int = 0
+    users: Optional[List[UserRead]]
+    quantity: Optional[int]
+    available: Optional[int]
 
 
-class BookPatchSchema(BaseModel):
-    title: str = 'Название'
-    year_published: int
-    description: str = Field(max_length=300)
-    quantity: int
-    available: int
+class BookUpdateSchema(BaseModel):
+    title: Optional[str]
+    year_published: Optional[int]
+    description: Optional[str] = Field(max_length=300)
+    authors_id: Optional[List[int]]
+    tags_id: Optional[List[int]]
+    quantity: Optional[int] = Field(ge=0)
+
+    @validator('year_published')
+    def year_early_current(cls, v):
+        if v and v > datetime.utcnow().year:
+            raise ValueError('Этот год еще не настал.')
+        return v
 
 
 class AuthorSchema(AuthorBase):

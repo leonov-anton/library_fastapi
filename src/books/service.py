@@ -1,65 +1,130 @@
-from typing import List, Union, Any
+from datetime import datetime
+from typing import List, Union
 
-from sqlalchemy import select, func, Result, update
+from pydantic import BaseModel
+from sqlalchemy import select, func, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, with_expression
 
 import src.books.schema as book_schema
-from .models import Book, Rating, Comment, Author, Tag
-from src.users.models import User
-
-from pydantic import BaseModel
 from src.db import Base
+from src.users.models import User
+from .models import Book, Rating, Comment, Author, Tag
 
 
-async def get_books_list(session: AsyncSession) -> List[Book]:
-
-    books = select(Book) \
+async def get_books_list(filter_str: str, session: AsyncSession) -> List[Book]:
+    search_str = '%' + filter_str + '%'
+    query = select(Book) \
+        .filter(Book.title.ilike(search_str) | Book.description.ilike(search_str)) \
         .outerjoin(Rating) \
         .outerjoin(Comment) \
         .options(joinedload(Book.authors),
                  joinedload(Book.tags),
+                 joinedload(Book.users),
                  with_expression(Book.avg_rating, func.avg(Rating.value).label('avg_rating')),
                  with_expression(Book.count_comments, func.count(Comment.id).label('count_comments'))) \
         .group_by(Book.id) \
         .order_by(Book.id)
 
-    res = await session.execute(books)
+    res = await session.execute(query)
     return res.unique().scalars().all()
 
 
-async def get_book_data(book_id: int, session: AsyncSession) -> Book:
+async def get_book_data(book_id: int, session: AsyncSession) -> Union[Book, None]:
     query = select(Book)\
         .where(Book.id == book_id) \
         .outerjoin(Rating) \
-        .options(joinedload(Book.authors, ),
+        .options(joinedload(Book.authors),
                  joinedload(Book.tags),
-                 joinedload(Book.comments).load_only(Comment.id, Comment.content, Comment.created),
+                 joinedload(Book.users),
+                 joinedload(Book.comments).load_only(Comment.id, Comment.content, Comment.created, Comment.changed),
                  with_expression(Book.avg_rating, func.avg(Rating.value).label('avg_rating')))\
         .group_by(Book.id)
 
     res = await session.execute(query)
-    return res.scalar()
+    if res is not None:
+        return res.scalar()
+
+
+async def get_authors_list(filter_str: str, session: AsyncSession) -> List[Author]:
+    search_str = '%' + filter_str + '%'
+    query = select(Author)\
+        .filter(Author.name.ilike(search_str)) \
+        .options(joinedload(Author.books))\
+        .order_by(Author.name)\
+        .group_by(Author.id)
+
+    res = await session.execute(query)
+    return res.unique().scalars().all()
+
+
+async def get_author_book_list(author_id: int, session: AsyncSession) -> List[Book]:
+    query = select(Book) \
+        .filter(Book.authors.any(id=author_id)) \
+        .outerjoin(Rating) \
+        .outerjoin(Comment) \
+        .options(joinedload(Book.authors),
+                 joinedload(Book.tags),
+                 joinedload(Book.users),
+                 with_expression(Book.avg_rating, func.avg(Rating.value).label('avg_rating')),
+                 with_expression(Book.count_comments, func.count(Comment.id).label('count_comments'))) \
+        .group_by(Book.id) \
+        .order_by(Book.id)
+
+    res = await session.execute(query)
+    return res.unique().scalars().all()
 
 
 async def add_new_book(
-        book_data: book_schema.BookAdminSchema,
-        authors_id: List[int],
+        book_data: book_schema.BookUpdateSchema,
         session: AsyncSession
 ) -> Book:
 
-    book_data_dict = book_data.dict()
-    book_data_dict.pop('id')
+    book_data_dict = book_data.dict(exclude_unset=True)
     book_data_dict['available'] = book_data_dict['quantity']
+    authors_id = book_data_dict.pop('authors')
+    tags_id = book_data_dict.pop('tags')
 
     book = Book(**book_data_dict)
 
-    book = await set_book_authors(book=book, authors_id=authors_id, session=session)
+    book = await set_book_authors(book, authors_id, session)
+    book = await set_book_tags(book, tags_id, session)
 
     session.add(book)
     await session.commit()
-    await session.close()
+    return book
 
+
+async def update_book_data(
+        book_id: int,
+        new_book_data: book_schema.BookUpdateSchema,
+        session: AsyncSession
+) -> Union[Book, None]:
+
+    book = await get_book_data(book_id, session)
+
+    if not book:
+        return None
+
+    update_data = new_book_data.dict(exclude_unset=True)
+    authors_id = update_data.pop('authors', None)
+    tags_id = update_data.pop('tags', None)
+
+    if 'quantity' in update_data:
+        if update_data['quantity'] == 0:
+            update_data['available'] = 0
+        else:
+            update_data['available'] = book.available + (update_data['quantity'] - book.quantity)
+
+    for key, value in update_data.items():
+        setattr(book, key, value)
+
+    if authors_id:
+        book = await set_book_authors(book, authors_id, session)
+    if tags_id:
+        book = await set_book_tags(book, tags_id, session)
+
+    await session.commit()
     return book
 
 
@@ -85,23 +150,25 @@ async def set_book_authors(
     return book
 
 
-async def change_book_data(
-        book_id: int,
-        new_book_data: book_schema.BookPatchSchema,
+async def set_book_tags(
+        book: Union[Book, int],
+        tags_id: List[int],
         session: AsyncSession
-) -> Book:
-    book = await get_book_data(book_id, session)
 
-    update_data = new_book_data.dict(exclude_unset=True, exclude_defaults=True)
-    update_data.pop('id', None)
+) -> Union[Book, None]:
 
-    authors_id = update_data.pop('authors_id', None)
-    tags_id = update_data.pop('tags_id', None)
+    if isinstance(book, int):
+        book = await get_book_data(book, session)
+        if not book:
+            return
 
-    if authors_id:
-        book = await set_book_authors(book, authors_id, session)
+    book.tags.clear()
 
-    book = await change_instance(book_id, update_data, Book, session)
+    for t_id in tags_id:
+        query = select(Tag).where(Tag.id == t_id)
+        tag = await session.scalar(query)
+        if tag:
+            book.authors.append(tag)
 
     return book
 
@@ -198,7 +265,7 @@ async def change_instance(
 ) -> Union[Base, None, str]:
 
     if not isinstance(new_instance_data, dict):
-        update_data = new_instance_data.dict(exclude_unset=True, exclude_defaults=True)
+        update_data = new_instance_data.dict(exclude_unset=True)
         update_data.pop('id', None)
         if not update_data:
             return 'Данные не переданы.'
@@ -206,10 +273,10 @@ async def change_instance(
         update_data = new_instance_data
 
     query = update(model).where(model.id == instance_id).values(**update_data).returning(model)
-    res = await session.scalar(query)
+    res = await session.execute(query)
 
     if res is not None:
-        return res
+        return res.scalar()
 
 
 async def delete_instance(
@@ -266,3 +333,54 @@ async def _get_book_from_user(
         book.users.remove(user)
         await session.commit()
         return book
+
+
+async def _update_comment(
+        comment_id,
+        new_comment: book_schema.CommentBase,
+        session: AsyncSession,
+        user: User
+) -> Union[Comment, None, str]:
+
+    query = select(Comment).where(Comment.id == comment_id)
+    comment = await session.scalar(query)
+    if not comment:
+        return None
+    if comment.user_id != user.id:
+        return 'Комметрий оставлен другим пользователем.'
+
+    update_data = new_comment.dict(exclude_unset=True)
+    update_data.pop(id, None)
+    if 'content' not in update_data:
+        return 'Данные не переданы.'
+
+    comment.content = update_data['content']
+    comment.changed = datetime.utcnow()
+
+    return comment
+
+
+async def _set_rating(
+        book_id: int,
+        rating: book_schema.RatingBase,
+        session: AsyncSession,
+        user: User
+) -> Union[Rating, str]:
+
+    update_data = rating.dict(exclude_unset=True)
+    update_data.pop('id', None)
+    if not update_data:
+        return 'Данные не переданы.'
+
+    statement = update(Rating)\
+        .where(and_(Rating.user == user, Rating.book_id == book_id))\
+        .values(**update_data)\
+        .returning(Rating)
+
+    res = await session.scalar(statement)
+    if not res:
+        res = Rating(value=rating.value, book_id=book_id, user_id=user.id)
+        session.add(rating)
+
+    await session.commit()
+    return res

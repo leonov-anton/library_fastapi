@@ -14,7 +14,7 @@ from .service import (
     get_books_list,
     add_new_book,
     get_book_data,
-    change_book_data,
+    update_book_data,
     create_author,
     change_author_data,
     get_author_data,
@@ -33,20 +33,18 @@ router = APIRouter(
     tags=['Book Admin']
 )
 
-# TODO:
-#  изменять авторов и теги при измении книги.
-
 
 @router.get('/',
             response_model=List[book_schema.BooksAdminSchema],
             status_code=status.HTTP_200_OK)
 async def get_books(
+        filter_str: str = '',
         limmit: int = 20,
         offset: int = 0,
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
 ):
-    books = await get_books_list(session)
+    books = await get_books_list(filter_str, session)
     return books[offset:][:limmit]
 
 
@@ -54,12 +52,11 @@ async def get_books(
              response_model=book_schema.BookAdminSchema,
              status_code=status.HTTP_201_CREATED)
 async def add_book(
-        book_data: book_schema.BookAdminSchema,
-        authors_id: List[int],
+        book_data: book_schema.BookUpdateSchema,
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
 ):
-    book = await add_new_book(book_data, authors_id, session)
+    book = await add_new_book(book_data, session)
     return book
 
 
@@ -72,7 +69,37 @@ async def get_book(
         admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
 ):
     book = await get_book_data(book_id, session)
+    if not book:
+        raise HTTPException(status_code=404, detail=f'Книга с id {book_id} не найдена.')
     return book
+
+
+@router.patch('/{book_id}',
+              response_model=book_schema.BookAdminSchema,
+              status_code=status.HTTP_200_OK)
+async def patch_book(
+        book_id: int,
+        new_book_data: book_schema.BookUpdateSchema,
+        session: AsyncSession = Depends(get_async_session),
+        admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
+):
+    book = await update_book_data(book_id, new_book_data, session)
+    if not book:
+        raise HTTPException(status_code=404, detail=f'Книга с id {book_id} не найдена.')
+    return book
+
+
+@router.delete('/{book_id}',
+               status_code=status.HTTP_200_OK)
+async def delete_book(
+        book_id: int,
+        session: AsyncSession = Depends(get_async_session),
+        admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
+):
+    res = await delete_instance(book_id, Book, session)
+    if not res:
+        raise HTTPException(status_code=404, detail=f'Тег с id {book_id} не найден.')
+    return {'Success': True}
 
 
 @router.post('/{book_id}/give',
@@ -105,34 +132,6 @@ async def get_book_from_user(
     if not res:
         raise HTTPException(status_code=404, detail=f'Книга или пользователь не найден.')
     return res
-
-
-@router.patch('/{book_id}',
-              response_model=book_schema.BookAdminSchema,
-              status_code=status.HTTP_200_OK)
-async def patch_book(
-        book_id: int,
-        new_book_data: book_schema.BookPatchSchema,
-        session: AsyncSession = Depends(get_async_session),
-        admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
-):
-    book = await change_book_data(book_id, new_book_data, session)
-    await session.commit()
-    return book
-
-
-@router.delete('/{book_id}',
-               status_code=status.HTTP_204_NO_CONTENT)
-async def delete_book(
-        book_id: int,
-        session: AsyncSession = Depends(get_async_session),
-        admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
-):
-
-    book = await get_book_data(book_id, session)
-    await session.delete(book)
-    await session.commit()
-    return HTTPException(status_code=204, detail='Книга удалена')
 
 
 @router.patch('/{book_id}/authors', response_model=book_schema.BookAdminSchema, status_code=status.HTTP_200_OK)
@@ -186,12 +185,10 @@ async def delete_author(
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(fastapi_users.current_user(active=True, superuser=True))
 ):
-    author = await get_author_data(author_id, session)
-    if not author:
-        raise HTTPException(status_code=404, detail=f'Автор с id {author_id} не найден.')
+    res = await delete_instance(author_id, Author, session)
 
-    await session.delete(author)
-    await session.commit()
+    if not res:
+        raise HTTPException(status_code=404, detail=f'Тег с id {author_id} не найден.')
     return 'Автор удален.'
 
 

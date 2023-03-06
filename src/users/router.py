@@ -1,5 +1,5 @@
 from src.main import app
-from .schemas import UserRead, UserCreate, UserUpdate
+from .schema import UserRead, UserCreate, UserUpdate
 from .auth_config import auth_backend, fastapi_users
 
 
