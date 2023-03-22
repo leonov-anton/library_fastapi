@@ -3,7 +3,7 @@ from typing import List, Union, Optional
 
 from pydantic import BaseModel, Field, validator, ValidationError
 
-from src.users.schema import UserRead
+from src.auth.schema import UserResponse
 
 # TODO:
 #  упорядочить схемы, добавить валидацию
@@ -18,8 +18,8 @@ class RatingBase(BaseModel):
 
 
 class TagBase(BaseModel):
-    id: Union[int, None] = None
-    content: str = ''
+    id: Optional[int]
+    content: str = Field(max_length=100)
 
     class Config:
         orm_mode = True
@@ -44,8 +44,8 @@ class AuthorBase(BaseModel):
 
 
 class BookBase(BaseModel):
-    id: int
-    title: str = 'Название'
+    id: Optional[int]
+    title: Optional[str]
     year_published: Optional[int]
     avg_rating: Optional[float]
 
@@ -61,10 +61,6 @@ class BookAuthor(BaseModel):
     authors: List[AuthorBase] = []
 
 
-class BookTag(BaseModel):
-    tags: List[TagBase] = []
-
-
 class BooksSchema(BookBase):
     count_comments: int = 0
     authors: List[AuthorBase] = []
@@ -72,9 +68,9 @@ class BooksSchema(BookBase):
 
 
 class BooksAdminSchema(BooksSchema):
-    users: List[UserRead] = []
-    quantity: int = 0
-    available: int = 0
+    users: Optional[List[UserResponse]]
+    quantity: Optional[int]
+    available: Optional[int]
 
 
 class BookSchema(BookBase):
@@ -85,7 +81,7 @@ class BookSchema(BookBase):
 
 
 class BookAdminSchema(BookSchema):
-    users: Optional[List[UserRead]]
+    users: Optional[List[UserResponse]]
     quantity: Optional[int]
     available: Optional[int]
 
@@ -110,4 +106,4 @@ class AuthorSchema(AuthorBase):
 
 
 class TagSchema(TagBase):
-    books: List[BookBase] = []
+    books: Optional[List[BookBase]]

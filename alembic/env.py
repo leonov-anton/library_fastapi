@@ -32,7 +32,7 @@ fileConfig(config.config_file_name)
 # target_metadata = mymodel.Base.metadata
 
 from src.db import Base
-from src.users.models import User
+from src.auth.models import User, AuthRefreshToken
 from src.books.models import Book, Author, Rating, Tag, Comment, book_author, book_user, book_tag
 
 target_metadata = Base.metadata

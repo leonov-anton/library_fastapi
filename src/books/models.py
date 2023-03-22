@@ -3,7 +3,7 @@ from datetime import datetime
 from sqlalchemy import Integer, String, ForeignKey, Table, Column, TIMESTAMP
 from sqlalchemy.orm import relationship, query_expression
 
-from src.users.models import User
+from src.auth.models import User
 
 from src.db import Base
 
@@ -21,6 +21,8 @@ book_user = Table(
     Base.metadata,
     Column('book_id', ForeignKey('book.id'), primary_key=True),
     Column('user_id', ForeignKey('user.id'), primary_key=True),
+    Column('give_at', TIMESTAMP, default=datetime.utcnow, nullable=False, primary_key=True),
+    Column('returned_at', TIMESTAMP, nullable=True)
 )
 
 # Many-to-many table books-tags
@@ -47,8 +49,8 @@ class Book(Base):
     title = Column(String, nullable=False)
     year_published = Column(Integer)
     description = Column(String(250), nullable=True)
-    quantity = Column(Integer, nullable=False)
-    available = Column(Integer)
+    quantity = Column(Integer, default=0, nullable=False)
+    available = Column(Integer, default=0, nullable=False)
 
     authors = relationship('Author', secondary='book_author', back_populates='books')
     users = relationship('User', secondary='book_user', back_populates='books')
@@ -67,7 +69,7 @@ class Comment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     created = Column(TIMESTAMP, default=datetime.utcnow, nullable=False)
-    content = Column(String(300))
+    content = Column(String(300), nullable=False)
     changed = Column(TIMESTAMP, nullable=True)
 
     user_id = Column(Integer, ForeignKey('user.id'))
@@ -81,7 +83,7 @@ class Tag(Base):
     __tablename__ = 'tag'
 
     id = Column(Integer, primary_key=True, index=True)
-    content = Column(String(100))
+    content = Column(String(100), nullable=False)
 
     books = relationship('Book', secondary='book_tag', back_populates='tags')
 

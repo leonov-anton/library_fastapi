@@ -1,6 +1,7 @@
 from datetime import datetime
 from typing import List, Union
 
+from fastapi import HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, func, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,8 +9,8 @@ from sqlalchemy.orm import joinedload, with_expression
 
 import src.books.schema as book_schema
 from src.db import Base
-from src.users.models import User
-from .models import Book, Rating, Comment, Author, Tag
+from src.auth.models import User
+from .models import Book, Rating, Comment, Author, Tag, book_user
 
 
 async def get_books_list(filter_str: str, session: AsyncSession) -> List[Book]:
@@ -82,17 +83,19 @@ async def add_new_book(
 
     book_data_dict = book_data.dict(exclude_unset=True)
     book_data_dict['available'] = book_data_dict['quantity']
-    authors_id = book_data_dict.pop('authors')
-    tags_id = book_data_dict.pop('tags')
+    authors_id = book_data_dict.pop('authors_id', None)
+    tags_id = book_data_dict.pop('tags_id', None)
 
     book = Book(**book_data_dict)
 
-    book = await set_book_authors(book, authors_id, session)
-    book = await set_book_tags(book, tags_id, session)
-
+    if authors_id:
+        book = await set_book_authors(book, authors_id, session)
+    if tags_id:
+        book = await set_book_tags(book, tags_id, session)
     session.add(book)
     await session.commit()
-    return book
+
+    return await get_book_data(book.id, session)
 
 
 async def update_book_data(
@@ -107,8 +110,8 @@ async def update_book_data(
         return None
 
     update_data = new_book_data.dict(exclude_unset=True)
-    authors_id = update_data.pop('authors', None)
-    tags_id = update_data.pop('tags', None)
+    authors_id = update_data.pop('authors_id', None)
+    tags_id = update_data.pop('tags_id', None)
 
     if 'quantity' in update_data:
         if update_data['quantity'] == 0:
@@ -168,7 +171,7 @@ async def set_book_tags(
         query = select(Tag).where(Tag.id == t_id)
         tag = await session.scalar(query)
         if tag:
-            book.authors.append(tag)
+            book.tags.append(tag)
 
     return book
 
@@ -178,7 +181,6 @@ async def create_author(author_name: str, session: AsyncSession) -> Author:
     session.add(author)
 
     await session.commit()
-    await session.close()
 
     return author
 
@@ -229,11 +231,7 @@ async def add_new_tag(
 async def get_tags_list(
         session: AsyncSession
 ):
-    query = select(Tag)\
-        .options(joinedload(Book.tags))\
-        .group_by(Tag.id)\
-        .order_by(Tag.id)
-
+    query = select(Tag).options(joinedload(Tag.books)).group_by(Tag.id).order_by(Tag.id)
     res = await session.execute(query)
     return res.unique().scalars().all()
 
@@ -297,42 +295,70 @@ async def _give_book_to_user(
         book_id: int,
         user_id: int,
         session: AsyncSession,
-) -> Union[Book, None, str]:
+) -> Book:
 
     query_book = select(Book).where(Book.id == book_id).options(joinedload(Book.users))
     book = await session.scalar(query_book)
     if not book:
-        return None
+        raise HTTPException(
+            status_code=404,
+            detail='Книга не найдена.'
+        )
 
     query_user = select(User).where(User.id == user_id)
     user = await session.scalar(query_user)
-    if book.available > 0 and user:
+    if not user:
+        raise HTTPException(
+            status_code=404,
+            detail='Пользователь не найден.'
+        )
+
+    if book.available > 0:
         book.available -= 1
         book.users.append(user)
         await session.commit()
         return book
     elif book.available == 0:
-        return 'Книги нет в наличии.'
+        raise HTTPException(
+            status_code=404,
+            detail='Книги нет в наличии.'
+        )
 
 
 async def _get_book_from_user(
         book_id: int,
         user_id: int,
         session: AsyncSession,
-) -> Union[Book, None]:
+) -> Book:
+
+    statement = update(book_user)\
+        .values(returned_at=datetime.utcnow()) \
+        .where(and_(book_user.c.book_id == book_id,
+                    book_user.c.user_id == user_id,
+                    book_user.c.returned_at == None))\
+        .returning(book_user)
+
+    book = await session.scalar(statement)
+
+    print(book)
+
+    if not book:
+        raise HTTPException(
+            status_code=404,
+            detail='Пользователь не брал эту кгину.'
+        )
 
     query_book = select(Book).where(Book.id == book_id).options(joinedload(Book.users))
     book = await session.scalar(query_book)
     if not book:
-        return None
+        raise HTTPException(
+            status_code=404,
+            detail='Книга не найдена.'
+        )
 
-    query_user = select(User).where(User.id == user_id)
-    user = await session.scalar(query_user)
-    if user:
-        book.available += 1
-        book.users.remove(user)
-        await session.commit()
-        return book
+    book.available += 1
+    await session.commit()
+    return book
 
 
 async def _update_comment(
@@ -369,8 +395,6 @@ async def _set_rating(
 
     update_data = rating.dict(exclude_unset=True)
     update_data.pop('id', None)
-    if not update_data:
-        return 'Данные не переданы.'
 
     statement = update(Rating)\
         .where(and_(Rating.user == user, Rating.book_id == book_id))\
@@ -380,7 +404,7 @@ async def _set_rating(
     res = await session.scalar(statement)
     if not res:
         res = Rating(value=rating.value, book_id=book_id, user_id=user.id)
-        session.add(rating)
+        session.add(res)
 
     await session.commit()
     return res

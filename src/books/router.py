@@ -1,14 +1,14 @@
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from src.auth.dependencies import get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import src.books.schema as book_schema
 from src.db import get_async_session
-from src.users.auth_config import fastapi_users
-from src.users.models import User
 from .models import Comment
 from .service import get_books_list, get_book_data, _update_comment, get_authors_list, get_author_book_list, _set_rating
+from ..auth.models import User
 
 router = APIRouter(
     prefix='/library',
@@ -23,7 +23,7 @@ async def get_books(
         filter_str: str = '',
         limmit: int = 20,
         offset: int = 0,
-        session: AsyncSession = Depends(get_async_session),
+        session: AsyncSession = Depends(get_async_session)
 ):
     """
     Эндпоинт всех книг. Пагинация, по умолчанию 10.
@@ -56,7 +56,7 @@ async def get_book(
     return book
 
 
-@router.get('/author/',
+@router.get(path='/author/',
             response_model=List[book_schema.AuthorSchema],
             status_code=status.HTTP_200_OK)
 async def get_authors(
@@ -87,7 +87,7 @@ async def set_rating(
         book_id: int,
         rating: book_schema.RatingBase,
         session: AsyncSession = Depends(get_async_session),
-        user: User = Depends(fastapi_users.current_user())
+        user: User = Depends(get_current_user)
 ):
     """
     Энепоин рейтинга книги от пользователя. Если ранее оченка ставила, то обновляет оценку.
@@ -102,8 +102,6 @@ async def set_rating(
                             session=session,
                             user=user)
 
-    if isinstance(res, str):
-        raise HTTPException(status_code=422, detail=res)
     return res
 
 
@@ -114,7 +112,7 @@ async def add_comment(
         book_id: int,
         comment: book_schema.CommentBase,
         session: AsyncSession = Depends(get_async_session),
-        user: User = Depends(fastapi_users.current_user())
+        user: User = Depends(get_current_user)
 ):
     """
     Эндпоин комментария от пользователя.
@@ -140,7 +138,7 @@ async def update_comment(
         comment_id: int,
         new_comment: book_schema.CommentBase,
         session: AsyncSession = Depends(get_async_session),
-        user: User = Depends(fastapi_users.current_user())
+        user: User = Depends(get_current_user)
 ):
     """
     Эндпоинт обновления комментария.
