@@ -21,7 +21,6 @@ from .service import (
     delete_instance,
     _give_book_to_user,
     _get_book_from_user,
-    set_book_authors,
 )
 
 router = APIRouter(
@@ -121,9 +120,6 @@ async def get_book_from_user(
         admin: User = Depends(get_current_admin_user)
 ):
     res = await _get_book_from_user(book_id, user_id, session)
-
-    if not res:
-        raise HTTPException(status_code=404, detail=f'Книга или пользователь не найден.')
     return res
 
 
@@ -149,11 +145,6 @@ async def update_author(
         admin: User = Depends(get_current_admin_user)
 ):
     author = await change_author_data(author_id, new_author_data, session)
-    await session.commit()
-    if not author:
-        raise HTTPException(status_code=404, detail=f'Автор с id {author_id} не найден.')
-    elif isinstance(author, str):
-        raise HTTPException(status_code=422, detail=author)
     return author
 
 
@@ -193,8 +184,6 @@ async def add_tag(
         admin: User = Depends(get_current_admin_user)
 ):
     tag = await add_new_tag(content, session)
-    if not tag:
-        raise HTTPException(status_code=422, detail='Данные не переданы')
     return tag
 
 
@@ -211,8 +200,6 @@ async def update_tag(
     await session.commit()
     if not tag:
         raise HTTPException(status_code=404, detail=f'Тег с id {tag_id} не найден.')
-    elif isinstance(tag, str):
-        raise HTTPException(status_code=422, detail=tag)
     return tag
 
 
@@ -224,7 +211,6 @@ async def delete_tag(
         admin: User = Depends(get_current_admin_user)
 ):
     res = await delete_instance(tag_id, Tag, session)
-
     if not res:
         raise HTTPException(status_code=404, detail=f'Тег с id {tag_id} не найден.')
     return 'Тег удален.'

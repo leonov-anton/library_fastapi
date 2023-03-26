@@ -153,8 +153,4 @@ async def update_comment(
                                     user=user,
                                     session=session)
     await session.commit()
-    if not comment:
-        raise HTTPException(status_code=404, detail=f'Комментарий с id {comment_id} не найден.')
-    elif isinstance(comment, str):
-        raise HTTPException(status_code=422, detail=comment)
     return comment

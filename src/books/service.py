@@ -202,14 +202,16 @@ async def change_author_data(
     update_data.pop('id', None)
 
     if not update_data:
-        return f'Данные не переданы.'
+        raise HTTPException(status_code=422, detail='Данные не переданы.')
 
     query = update(Author).where(Author.id == author_id).values(**update_data).returning(Author)
     author = await session.scalar(query)
 
-    if author is not None:
-        await session.commit()
-        return author
+    if author is None:
+        raise HTTPException(status_code=404, detail=f'Автор с id {author_id} не найден.')
+
+    await session.commit()
+    return author
 
 
 async def add_new_tag(
@@ -220,12 +222,13 @@ async def add_new_tag(
     tag_data = content.dict(exclude_unset=True, exclude_defaults=True)
     tag_data.pop('id', None)
 
-    if tag_data:
-        tag = Tag(**tag_data)
-        session.add(tag)
-        await session.commit()
+    if tag_data is None:
+        raise HTTPException(status_code=422, detail='Данные не переданы')
 
-        return tag
+    tag = Tag(**tag_data)
+    session.add(tag)
+    await session.commit()
+    return tag
 
 
 async def get_tags_list(
@@ -266,7 +269,7 @@ async def change_instance(
         update_data = new_instance_data.dict(exclude_unset=True)
         update_data.pop('id', None)
         if not update_data:
-            return 'Данные не переданы.'
+            raise HTTPException(status_code=422, detail='Данные не переданы.')
     else:
         update_data = new_instance_data
 
@@ -340,8 +343,6 @@ async def _get_book_from_user(
 
     book = await session.scalar(statement)
 
-    print(book)
-
     if not book:
         raise HTTPException(
             status_code=404,
@@ -371,14 +372,14 @@ async def _update_comment(
     query = select(Comment).where(Comment.id == comment_id)
     comment = await session.scalar(query)
     if not comment:
-        return None
+        raise HTTPException(status_code=404, detail=f'Комментарий с id {comment_id} не найден.')
     if comment.user_id != user.id:
-        return 'Комметрий оставлен другим пользователем.'
+        raise HTTPException(status_code=422, detail='Комметрий оставлен другим пользователем.')
 
     update_data = new_comment.dict(exclude_unset=True)
-    update_data.pop(id, None)
+    update_data.pop('id', None)
     if 'content' not in update_data:
-        return 'Данные не переданы.'
+        raise HTTPException(status_code=422, detail='Данные не переданы.')
 
     comment.content = update_data['content']
     comment.changed = datetime.utcnow()

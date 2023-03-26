@@ -1,7 +1,6 @@
 import asyncio
 from typing import AsyncGenerator
 
-from fastapi import APIRouter, Depends, status, Response, Cookie
 import pytest_asyncio
 from fastapi.testclient import TestClient
 from httpx import AsyncClient
