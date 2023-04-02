@@ -63,10 +63,7 @@ async def get_book(
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(get_current_admin_user)
 ):
-    book = await get_book_data(book_id, session)
-    if not book:
-        raise HTTPException(status_code=404, detail=f'Книга с id {book_id} не найдена.')
-    return book
+    return await get_book_data(book_id, session)
 
 
 @router.patch('/{book_id}',
@@ -78,10 +75,7 @@ async def patch_book(
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(get_current_admin_user)
 ):
-    book = await update_book_data(book_id, new_book_data, session)
-    if not book:
-        raise HTTPException(status_code=404, detail=f'Книга с id {book_id} не найдена.')
-    return book
+    return await update_book_data(book_id, new_book_data, session)
 
 
 @router.delete('/{book_id}',
@@ -91,10 +85,8 @@ async def delete_book(
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(get_current_admin_user)
 ):
-    res = await delete_instance(book_id, Book, session)
-    if not res:
-        raise HTTPException(status_code=404, detail=f'Тег с id {book_id} не найден.')
-    return {'Success': True}
+    await delete_instance(book_id, Book, session)
+    return {'Message': 'Object was deleted.'}
 
 
 @router.post('/{book_id}/give',
@@ -155,11 +147,8 @@ async def delete_author(
         session: AsyncSession = Depends(get_async_session),
         admin: User = Depends(get_current_admin_user)
 ):
-    res = await delete_instance(author_id, Author, session)
-
-    if not res:
-        raise HTTPException(status_code=404, detail=f'Тег с id {author_id} не найден.')
-    return 'Автор удален.'
+    await delete_instance(author_id, Author, session)
+    return {'Message': 'Object was deleted.'}
 
 
 @router.get('/tag/',
@@ -198,8 +187,6 @@ async def update_tag(
 ):
     tag = await change_instance(instance_id=tag_id, new_instance_data=content, model=Tag, session=session)
     await session.commit()
-    if not tag:
-        raise HTTPException(status_code=404, detail=f'Тег с id {tag_id} не найден.')
     return tag
 
 
@@ -211,6 +198,4 @@ async def delete_tag(
         admin: User = Depends(get_current_admin_user)
 ):
     res = await delete_instance(tag_id, Tag, session)
-    if not res:
-        raise HTTPException(status_code=404, detail=f'Тег с id {tag_id} не найден.')
-    return 'Тег удален.'
+    return {'Message': 'Object was deleted.'}

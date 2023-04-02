@@ -1,23 +1,19 @@
 from datetime import datetime, timedelta
 from typing import Union, List
 
-from fastapi import HTTPException, status
 from sqlalchemy import select, or_
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import joinedload
 
+from src.books.models import Book
+from src.exceptions import UserDataTakenException, InvalidCredentialsException, InvalidRefreshTokenException
 from .models import User, AuthRefreshToken
 from .schema import UserCreate, UserAuth
 from .utils import hash_password, check_password, generate_alphanum_random_string
-from src.books.models import Book, book_user
 
 
 async def create_user(new_user_data: UserCreate, session: AsyncSession) -> User:
     if await check_email_and_username(new_user_data, session):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Пользотавель с таким данными уже зарегистрирован.'
-        )
+        raise UserDataTakenException
 
     user = User(
         email=new_user_data.email,
@@ -44,8 +40,6 @@ async def user_books(user_id: int, session: AsyncSession) -> List[Book]:
     query = select(Book)\
         .filter(Book.users.any(id=user_id))
 
-    print(query)
-
     res = await session.execute(query)
 
     return res.scalars().all()
@@ -56,16 +50,10 @@ async def authenticate_user(user_data: UserAuth, session: AsyncSession) -> User:
     user = await session.scalar(query)
 
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Пользотавель с таким данными не зарегистрирован.'
-        )
+        raise InvalidCredentialsException
 
     if not check_password(user_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Пользотавель с таким данными не зарегистрирован.'
-        )
+        raise InvalidCredentialsException
 
     return user
 
@@ -93,10 +81,7 @@ async def get_refresh_token(
 async def expire_refresh_token(user_refresh_token: str, session: AsyncSession) -> None:
     refresh_token = await get_refresh_token(user_refresh_token, session)
     if not refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Неверный токен.'
-        )
+        raise InvalidRefreshTokenException
     refresh_token.expires_at = datetime.utcnow() - timedelta(hours=24)
     await session.commit()
 
@@ -104,23 +89,14 @@ async def expire_refresh_token(user_refresh_token: str, session: AsyncSession) -
 async def valid_refresh_token(user_refresh_token: str, session: AsyncSession) -> AuthRefreshToken:
     db_refresh_token = await get_refresh_token(user_refresh_token, session)
     if not db_refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Неверный токен.'
-        )
+        raise InvalidRefreshTokenException
     if db_refresh_token.expires_at <= datetime.utcnow():
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Неверный токен.'
-        )
+        raise InvalidRefreshTokenException
     return db_refresh_token
 
 
 async def get_user_from_refresh_token(user_refresh_token: str, session: AsyncSession) -> User:
     refresh_token = await valid_refresh_token(user_refresh_token, session)
     if not refresh_token:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail='Неверный токен.'
-        )
+        raise InvalidRefreshTokenException
     return await get_user(refresh_token.user_id, session)

@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import List, Union
 
-from fastapi import HTTPException
+from fastapi import HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import select, func, update, and_
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,6 +10,7 @@ from sqlalchemy.orm import joinedload, with_expression
 import src.books.schema as book_schema
 from src.db import Base
 from src.auth.models import User
+from src.exceptions import ObjNotFoundException, InvalidDataException
 from .models import Book, Rating, Comment, Author, Tag, book_user
 
 
@@ -43,8 +44,9 @@ async def get_book_data(book_id: int, session: AsyncSession) -> Union[Book, None
         .group_by(Book.id)
 
     res = await session.execute(query)
-    if res is not None:
-        return res.scalar()
+    if res is None:
+        raise ObjNotFoundException
+    return res.scalar()
 
 
 async def get_authors_list(filter_str: str, session: AsyncSession) -> List[Author]:
@@ -105,9 +107,6 @@ async def update_book_data(
 ) -> Union[Book, None]:
 
     book = await get_book_data(book_id, session)
-
-    if not book:
-        return None
 
     update_data = new_book_data.dict(exclude_unset=True)
     authors_id = update_data.pop('authors_id', None)
@@ -202,13 +201,13 @@ async def change_author_data(
     update_data.pop('id', None)
 
     if not update_data:
-        raise HTTPException(status_code=422, detail='Данные не переданы.')
+        raise InvalidDataException
 
     query = update(Author).where(Author.id == author_id).values(**update_data).returning(Author)
     author = await session.scalar(query)
 
     if author is None:
-        raise HTTPException(status_code=404, detail=f'Автор с id {author_id} не найден.')
+        raise ObjNotFoundException
 
     await session.commit()
     return author
@@ -223,7 +222,7 @@ async def add_new_tag(
     tag_data.pop('id', None)
 
     if tag_data is None:
-        raise HTTPException(status_code=422, detail='Данные не переданы')
+        raise InvalidDataException
 
     tag = Tag(**tag_data)
     session.add(tag)
@@ -248,7 +247,7 @@ async def change_tag_data(
     update_data.pop('id', None)
 
     if not update_data:
-        return 'Данные не переданы.'
+        raise InvalidDataException
 
     query = update(Tag).where(Tag.id == tag_id).values(**update_data).returning(Tag)
     tag = await session.scalar(query)
@@ -269,15 +268,16 @@ async def change_instance(
         update_data = new_instance_data.dict(exclude_unset=True)
         update_data.pop('id', None)
         if not update_data:
-            raise HTTPException(status_code=422, detail='Данные не переданы.')
+            raise InvalidDataException
     else:
         update_data = new_instance_data
 
     query = update(model).where(model.id == instance_id).values(**update_data).returning(model)
     res = await session.execute(query)
 
-    if res is not None:
-        return res.scalar()
+    if res is None:
+        raise ObjNotFoundException
+    return res.scalar()
 
 
 async def delete_instance(
@@ -287,8 +287,8 @@ async def delete_instance(
 ) -> bool:
     query = select(model).where(model.id == instance_id)
     instance = await session.scalar(query)
-    if not instance:
-        return False
+    if instance is None:
+        raise ObjNotFoundException
     await session.delete(instance)
     await session.commit()
     return True
@@ -302,19 +302,13 @@ async def _give_book_to_user(
 
     query_book = select(Book).where(Book.id == book_id).options(joinedload(Book.users))
     book = await session.scalar(query_book)
-    if not book:
-        raise HTTPException(
-            status_code=404,
-            detail='Книга не найдена.'
-        )
+    if book is None:
+        raise ObjNotFoundException
 
     query_user = select(User).where(User.id == user_id)
     user = await session.scalar(query_user)
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail='Пользователь не найден.'
-        )
+    if user is None:
+        raise ObjNotFoundException
 
     if book.available > 0:
         book.available -= 1
@@ -323,8 +317,8 @@ async def _give_book_to_user(
         return book
     elif book.available == 0:
         raise HTTPException(
-            status_code=404,
-            detail='Книги нет в наличии.'
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Book not available.'
         )
 
 
@@ -345,17 +339,14 @@ async def _get_book_from_user(
 
     if not book:
         raise HTTPException(
-            status_code=404,
-            detail='Пользователь не брал эту кгину.'
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Book wasn't taken by user."
         )
 
     query_book = select(Book).where(Book.id == book_id).options(joinedload(Book.users))
     book = await session.scalar(query_book)
     if not book:
-        raise HTTPException(
-            status_code=404,
-            detail='Книга не найдена.'
-        )
+        raise ObjNotFoundException
 
     book.available += 1
     await session.commit()
@@ -372,14 +363,17 @@ async def _update_comment(
     query = select(Comment).where(Comment.id == comment_id)
     comment = await session.scalar(query)
     if not comment:
-        raise HTTPException(status_code=404, detail=f'Комментарий с id {comment_id} не найден.')
+        raise ObjNotFoundException
     if comment.user_id != user.id:
-        raise HTTPException(status_code=422, detail='Комметрий оставлен другим пользователем.')
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail='Comment created by another user.'
+        )
 
     update_data = new_comment.dict(exclude_unset=True)
     update_data.pop('id', None)
     if 'content' not in update_data:
-        raise HTTPException(status_code=422, detail='Данные не переданы.')
+        raise InvalidDataException
 
     comment.content = update_data['content']
     comment.changed = datetime.utcnow()

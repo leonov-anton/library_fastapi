@@ -50,10 +50,7 @@ async def get_book(
     :param session: сессия БД
     :return: Книга: id, название, авторы, год, средний рейтинг, комментарии к книге, теги
     """
-    book = await get_book_data(book_id, session)
-    if not book:
-        raise HTTPException(status_code=404, detail=f'Книга с id {book_id} не найдена.')
-    return book
+    return await get_book_data(book_id, session)
 
 
 @router.get(path='/author/',

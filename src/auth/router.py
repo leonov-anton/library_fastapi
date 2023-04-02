@@ -128,7 +128,7 @@ async def user_logout(
     response.delete_cookie(key='access_token')
     response.delete_cookie(key='refresh_token')
 
-    return {'Message': 'Выход выполнен.'}
+    return {'Message': 'Success logout.'}
 
 
 @router.get(
